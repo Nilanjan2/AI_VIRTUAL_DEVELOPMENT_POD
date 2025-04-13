@@ -358,8 +358,7 @@ def chat_with_agent(agent_role: str, message: str) -> str:
     """
     Simulate a conversation with the specified agent.
     Constructs a prompt that includes a respectful greeting, the global project context,
-    and explicit domain instructions ensuring that the agent only responds to queries
-    within its domain. If a query is outside the agent's scope, it should indicate that.
+    and explicit domain instructions to ensure that the agent responds only within its area.
     """
     current_hour = datetime.datetime.now().hour
     if current_hour < 12:
@@ -371,14 +370,13 @@ def chat_with_agent(agent_role: str, message: str) -> str:
     
     global_context = st.session_state.get("project_context", "")
     
-    # Domain-specific instructions for each agent.
     domain_instructions = {
-        "Business Analyst Agent": "You are a Business Analyst. Only answer questions related to requirements, user stories, acceptance criteria, and story points. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
-        "Design Agent": "You are a Design Agent. Only answer questions related to system design, architecture, and diagrams. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
-        "Developer Agent": "You are a Developer Agent. Only answer questions related to source code, coding practices, and folder structure. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
-        "Testing Agent": "You are a Testing Agent. Only answer questions related to test cases and execution results. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
-        "Security Analyst Agent": "You are a Security Analyst Agent. Only answer questions related to security analysis, vulnerabilities, and best practices. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
-        "Performance Agent": "You are a Performance Agent. Only answer questions related to performance optimization and code efficiency. If the query is outside your domain, please state that this query should be directed to the appropriate agent."
+        "Business Analyst Agent": "You are a Business Analyst. Answer only questions about requirements, user stories, acceptance criteria, and story points.",
+        "Design Agent": "You are a Design Agent. Answer only questions about system design, architecture, and diagrams.",
+        "Developer Agent": "You are a Developer Agent. Answer only questions about source code, coding practices, and folder structure.",
+        "Testing Agent": "You are a Testing Agent. Answer only questions about test cases and execution results.",
+        "Security Analyst Agent": "You are a Security Analyst. Answer only questions about security vulnerabilities and recommendations.",
+        "Performance Agent": "You are a Performance Agent. Answer only questions about performance optimization and code efficiency."
     }
     instruction = domain_instructions.get(agent_role, "")
     
@@ -388,7 +386,7 @@ def chat_with_agent(agent_role: str, message: str) -> str:
         f"My question for you, as the {agent_role}, is: '{message}'. "
         f"{instruction} "
         "Provide a detailed and definitive update on the quality, progress, and results of your artifact. "
-        "Your response must be complete, professional, and entirely free of any placeholders or uncertainty. "
+        "Your response must be complete, professional, and entirely free of any placeholders, uncertainty, or fill-in blanks. "
         "Respond with absolute clarity and certainty. End your response with 'Thank you, with regards.'"
     )
     response = gemini_generate(prompt)
@@ -399,9 +397,8 @@ def display_conversation(agent_role: str):
     Display the conversation history for the specified agent with the most recent message on top.
     Each conversation is shown in a scrollable container.
     """
-    # Ensure conversation_history is initialized.
-    if "conversation_history" not in st.session_state:
-        st.session_state["conversation_history"] = {role: [] for role in AGENT_ROLES.keys()}
+    # Initialize conversation_history if not present.
+    st.session_state.setdefault("conversation_history", {role: [] for role in AGENT_ROLES.keys()})
     history = st.session_state["conversation_history"].get(agent_role, [])
     if history:
         reversed_history = history[::-1]
@@ -414,10 +411,11 @@ def display_conversation(agent_role: str):
         st.markdown(f"<div class='conversation-box'><h4><strong>Conversation with {agent_role}</strong></h4><p>No conversation yet.</p></div>", unsafe_allow_html=True)
 
 def main():
-    # Initialize conversation_history if not present.
-    if "conversation_history" not in st.session_state:
-        st.session_state["conversation_history"] = {role: [] for role in AGENT_ROLES.keys()}
-    
+    # Initialize session state keys if not present.
+    st.session_state.setdefault("conversation_history", {role: [] for role in AGENT_ROLES.keys()})
+    st.session_state.setdefault("project_context", "")
+    st.session_state.setdefault("master_output", {})
+
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     st.title("AI-powered Virtual Development Pod")
     st.subheader("Project Manager Dashboard")
@@ -435,7 +433,7 @@ def main():
             st.error("Please enter valid business requirements.")
         else:
             st.info("Coordinating the agents... Please wait.")
-            from services.agent_orchestration import AgentOrchestrator  # local import if needed
+            from services.agent_orchestration import AgentOrchestrator
             orchestrator = AgentOrchestrator()
             results = orchestrator.orchestrate_pipeline(business_requirements)
             st.success("Workflow Execution Completed!")
@@ -443,7 +441,7 @@ def main():
             st.session_state["master_output"] = results
     
     # Always display the master output if available.
-    if "master_output" in st.session_state:
+    if st.session_state.get("master_output"):
         master = st.session_state["master_output"]
         user_stories = clean_text(master.get("user_stories", ""))
         design_artifact = clean_text(master.get("design_artifact", ""))
