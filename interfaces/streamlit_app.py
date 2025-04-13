@@ -235,13 +235,21 @@ if __name__ == '__main__':
 import streamlit as st
 from services.agent_orchestration import AgentOrchestrator
 from services.language_model_integration import gemini_generate
+from dotenv import load_dotenv
 import re
 import datetime
+import warnings
 
-# Set page configuration for a wide layout
+# Suppress specific numpy RuntimeWarnings to reduce log clutter.
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+# Load environment variables from .env.
+load_dotenv()
+
+# Set page configuration for a wide layout.
 st.set_page_config(page_title="AI-powered Virtual Development Pod", layout="wide")
 
-# Custom CSS for a professional, colorful interface with containerized boxes and scroll bars
+# Custom CSS for a professional, colorful interface with containerized boxes and scroll bars.
 st.markdown("""
     <style>
     body {
@@ -309,16 +317,16 @@ AGENT_ROLES = {
     "Design Agent": "is responsible for generating precise software design artifacts and corresponding flow charts based on the user stories.",
     "Developer Agent": "is responsible for producing well-indented, production-quality source code and providing a clear folder structure for the project.",
     "Testing Agent": "is responsible for generating comprehensive test cases and delivering definitive test execution results in an industry-standard format.",
-    "Security Analyst Agent": "is responsible for reviewing the source code for vulnerabilities and potential threats, returning a comprehensive security analysis.",
-    "Optimizer Agent": "is responsible for identifying performance bottlenecks and suggesting code optimizations for better efficiency."
-
+    "Security Analyst Agent": "is responsible for reviewing the source code for vulnerabilities and potential threats, and providing a comprehensive security analysis.",
+    "Performance Agent": "is responsible for identifying performance bottlenecks and suggesting specific, measurable optimization strategies."
 }
 
 def clean_text(text: str) -> str:
     """
     Remove unwanted characters (#, *, -) while preserving newline characters.
     """
-    cleaned = re.sub(r"[#\*\-]+", "", text)
+    # The asterisk (*) does not need escaping inside a character set.
+    cleaned = re.sub(r"[#*\-]+", "", text)
     cleaned = re.sub(r"[ ]{2,}", " ", cleaned)
     return cleaned.strip()
 
@@ -349,9 +357,9 @@ def display_artifact(title: str, content: str, language: str = None):
 def chat_with_agent(agent_role: str, message: str) -> str:
     """
     Simulate a conversation with the specified agent.
-    Constructs a prompt that starts with a respectful greeting, includes the global project context,
-    and instructs the agent to provide a clear, direct, definitive, and sure-shot update without any placeholders,
-    uncertainty, or fill-in blanks.
+    Constructs a prompt that includes a respectful greeting, the global project context,
+    and explicit domain instructions ensuring that the agent only responds to queries
+    within its domain. If a query is outside the agent's scope, it should indicate that.
     """
     current_hour = datetime.datetime.now().hour
     if current_hour < 12:
@@ -363,12 +371,26 @@ def chat_with_agent(agent_role: str, message: str) -> str:
     
     global_context = st.session_state.get("project_context", "")
     
-    prompt = (f"Respected Sir, {greeting}. I am the Project Manager. "
-              f"The project is defined as: {global_context}. "
-              f"My question for you, as the {agent_role}, is: '{message}'. "
-              "Provide a detailed and definitive update on the quality, progress, and results of your artifact. "
-              "Your response must be complete, professional, and entirely free of any placeholders, uncertainty, or fill-in blanks. "
-              "Respond with absolute clarity and certainty. End your response with 'Thank you, with regards.'")
+    # Domain-specific instructions for each agent.
+    domain_instructions = {
+        "Business Analyst Agent": "You are a Business Analyst. Only answer questions related to requirements, user stories, acceptance criteria, and story points. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
+        "Design Agent": "You are a Design Agent. Only answer questions related to system design, architecture, and diagrams. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
+        "Developer Agent": "You are a Developer Agent. Only answer questions related to source code, coding practices, and folder structure. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
+        "Testing Agent": "You are a Testing Agent. Only answer questions related to test cases and execution results. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
+        "Security Analyst Agent": "You are a Security Analyst Agent. Only answer questions related to security analysis, vulnerabilities, and best practices. If the query is outside your domain, please state that this query should be directed to the appropriate agent.",
+        "Performance Agent": "You are a Performance Agent. Only answer questions related to performance optimization and code efficiency. If the query is outside your domain, please state that this query should be directed to the appropriate agent."
+    }
+    instruction = domain_instructions.get(agent_role, "")
+    
+    prompt = (
+        f"Respected Sir, {greeting}. I am the Project Manager. "
+        f"The project is defined as: {global_context}. "
+        f"My question for you, as the {agent_role}, is: '{message}'. "
+        f"{instruction} "
+        "Provide a detailed and definitive update on the quality, progress, and results of your artifact. "
+        "Your response must be complete, professional, and entirely free of any placeholders or uncertainty. "
+        "Respond with absolute clarity and certainty. End your response with 'Thank you, with regards.'"
+    )
     response = gemini_generate(prompt)
     return response
 
@@ -377,7 +399,10 @@ def display_conversation(agent_role: str):
     Display the conversation history for the specified agent with the most recent message on top.
     Each conversation is shown in a scrollable container.
     """
-    history = st.session_state.conversation_history.get(agent_role, [])
+    # Ensure conversation_history is initialized.
+    if "conversation_history" not in st.session_state:
+        st.session_state["conversation_history"] = {role: [] for role in AGENT_ROLES.keys()}
+    history = st.session_state["conversation_history"].get(agent_role, [])
     if history:
         reversed_history = history[::-1]
         conversation_html = f"<div class='conversation-box'><h4><strong>Conversation with {agent_role}</strong></h4>"
@@ -388,18 +413,19 @@ def display_conversation(agent_role: str):
     else:
         st.markdown(f"<div class='conversation-box'><h4><strong>Conversation with {agent_role}</strong></h4><p>No conversation yet.</p></div>", unsafe_allow_html=True)
 
-if "conversation_history" not in st.session_state:
-    st.session_state.conversation_history = {role: [] for role in AGENT_ROLES.keys()}
-
 def main():
+    # Initialize conversation_history if not present.
+    if "conversation_history" not in st.session_state:
+        st.session_state["conversation_history"] = {role: [] for role in AGENT_ROLES.keys()}
+    
     st.markdown('<div class="main-container">', unsafe_allow_html=True)
     st.title("AI-powered Virtual Development Pod")
     st.subheader("Project Manager Dashboard")
     
     st.markdown("### Enter High-Level Business Requirements")
     business_requirements = st.text_area(
-        "Business Requirements", 
-        height=250, 
+        "Business Requirements",
+        height=250,
         placeholder="Provide your high-level business requirements here..."
     )
     
@@ -409,6 +435,7 @@ def main():
             st.error("Please enter valid business requirements.")
         else:
             st.info("Coordinating the agents... Please wait.")
+            from services.agent_orchestration import AgentOrchestrator  # local import if needed
             orchestrator = AgentOrchestrator()
             results = orchestrator.orchestrate_pipeline(business_requirements)
             st.success("Workflow Execution Completed!")
@@ -416,7 +443,6 @@ def main():
             st.session_state["master_output"] = results
     
     # Always display the master output if available.
-    # Inside the block where st.session_state["master_output"] is handled
     if "master_output" in st.session_state:
         master = st.session_state["master_output"]
         user_stories = clean_text(master.get("user_stories", ""))
@@ -434,17 +460,18 @@ def main():
         display_artifact("Test Execution Results", test_results)
         display_artifact("Security Analysis Report", security_analysis)
         display_artifact("Performance Optimization Suggestions", performance_optimization)
-
+    
     st.markdown("### Chat with an Agent")
-    agent_choice = st.selectbox("Choose an Agent", list(st.session_state.conversation_history.keys()))
+    conversation_dict = st.session_state.get("conversation_history", {})
+    agent_choice = st.selectbox("Choose an Agent", list(conversation_dict.keys()))
     user_message = st.text_input("Your Message to the Agent", placeholder="Type your message here...")
     if st.button("Send Message"):
         if not user_message.strip():
             st.error("Please enter a message.")
         else:
-            st.session_state.conversation_history[agent_choice].append(("Project Manager", user_message))
+            st.session_state["conversation_history"][agent_choice].append(("Project Manager", user_message))
             response = chat_with_agent(agent_choice, user_message)
-            st.session_state.conversation_history[agent_choice].append((agent_choice, response))
+            st.session_state["conversation_history"][agent_choice].append((agent_choice, response))
     
     display_conversation(agent_choice)
     
